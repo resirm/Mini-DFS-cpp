@@ -1,0 +1,7 @@
+# Windows
+*.o
+*.exe
+*.ii
+*.s
+*.py[cod]
+build
