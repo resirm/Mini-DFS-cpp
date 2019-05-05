@@ -5,3 +5,6 @@
 *.s
 *.py[cod]
 build
+
+# OS X
+.DS_Store
