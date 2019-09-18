@@ -37,7 +37,7 @@ public:
     void saveMeta(){
         bool state = true;
         state = state && saveJson(vp2idx, vpath2idx_);
-        state = state && saveJson(fp2vp, fpath2vpath_);
+        state = state && saveJson(vp2fp, vpath2fpath_);
         state = state && saveJson(idx2blks, idx2blks_);
         state = state && saveJson(ftree, fileTree_);
         if(state){
@@ -51,8 +51,8 @@ public:
         return vpath2idx_;
     }
 
-    std::map<std::string, std::string>& getFp2vp(){
-        return fpath2vpath_;
+    std::map<std::string, std::string>& getVp2fp(){
+        return vpath2fpath_;
     }
 
     std::map<size_t, std::pair<size_t, size_t>>& getIdx2blks(){
@@ -68,7 +68,7 @@ public:
 protected:
     FileSysInfo(std::string metaRoot = "/Users/yifengzhu/Code/Mini-DFS-cpp/miniDFS/metaData/"): 
         metaRoot_(metaRoot), fileCount_(0), vp2idx(metaRoot+"vp2idx.json"), 
-        fp2vp(metaRoot+"fp2vp.json"), idx2blks(metaRoot+"idx2blks.json"), 
+        vp2fp(metaRoot+"vp2fp.json"), idx2blks(metaRoot+"idx2blks.json"), 
         ftree(metaRoot+"fileSys.json"){
         std::string cdcmd("cd "+metaRoot_);
         std::string mkcmd("mkdir -p "+metaRoot_);
@@ -81,7 +81,7 @@ protected:
         }else{
             bool state = true;
             state = state && loadJson(vp2idx, vpath2idx_);
-            state = state && loadJson(fp2vp, fpath2vpath_);
+            state = state && loadJson(vp2fp, vpath2fpath_);
             state = state && loadJson(idx2blks, idx2blks_);
             state = state && loadJson(ftree, fileTree_);
             if(fileTree_.find("/") == fileTree_.end()){
@@ -93,8 +93,8 @@ protected:
                 return;
             }
 
-            if(fpath2vpath_.size() > 0){
-                fileCount_ = fpath2vpath_.size() + 1;
+            if(vpath2fpath_.size() > 0){
+                fileCount_ = vpath2fpath_.size();
                 cout << "Load fileCount: " << fileCount_ << endl;
             }else{
                 cout << "No file found." << endl;
@@ -147,13 +147,13 @@ private:
 private:
     static std::shared_ptr<FileSysInfo> fileSysInfo_;
     std::map<std::string, size_t> vpath2idx_;
-    std::map<std::string, std::string> fpath2vpath_;
+    std::map<std::string, std::string> vpath2fpath_;
     std::map<size_t, std::pair<size_t, size_t>> idx2blks_;
     std::map<std::string, std::vector<std::pair<std::string, char>>> fileTree_;
     size_t fileCount_;
     std::string metaRoot_;
     const std::string vp2idx;
-    const std::string fp2vp;
+    const std::string vp2fp;
     const std::string idx2blks;
     const std::string ftree;
     // const std::string jfs;
@@ -220,8 +220,68 @@ public:
         return true;
     }
 
-    bool rm(std::string name) { std::cerr << "Error! File can NOT rm.\n"; return false; }
-    bool rmdir(std::string name) { std::cerr << "Error! File can NOT rm.\n"; return false; }
+    bool rm(std::string name) {
+        if(name == "" || name == "." || name == ".."){
+            std::cerr << "rm " + name + " is NOT allowed, rm failed.\n";
+            return false;
+        }
+        bool state = true;
+        std::string path(wd_);
+        state = parsePath(path, name, 'f');
+        vpath_ = (path == "/" ? path + name : path + "/" + name);
+        if(!state){
+            std::cerr << "File " + vpath_ + " does NOT exist, rm failed.\n";
+        }else{
+            size_t fileIdx_ = meta_->getVp2idx()[vpath_];
+            auto blksAndLen = meta_->getIdx2blks()[fileIdx_];
+            fpath_ = meta_->getVp2fp()[vpath_];
+            size_t blks_ = blksAndLen.first;
+            size_t len_ = blksAndLen.second;
+            size_t idx = 0;
+
+            std::string rmcmd("rm " + getRoot()+std::to_string(fileIdx_)+"-*");
+
+            size_t ret = system(rmcmd.c_str());
+            if(ret == 0){
+                std::cout << "rm finished, " << blks_ << " blocks removed.\n";
+                meta_->getTree()[path].erase(std::find(meta_->getTree()[path].begin(), meta_->getTree()[path].end(), std::make_pair(name, 'f')));
+                meta_->getIdx2blks().erase(fileIdx_);
+                meta_->getVp2idx().erase(vpath_);
+                meta_->getVp2fp().erase(vpath_);
+                state = true;
+            }else{
+                std::cerr << "rm failed.\n";
+                state = false;
+            }
+        }
+
+        return state;
+    }
+
+    bool rmdir(std::string name) {
+        if(name == "" || name == "." || name == ".."){
+            std::cerr << "rm " + name + " is NOT allowed, rm failed.\n";
+            return false;
+        }
+        bool state = true;
+        std::string path(wd_);
+        state = parsePath(path, name);
+        if(!state){
+            std::cerr << "Dir " + name + " does NOT exist, rm failed.\n";
+        }else{
+            bool empty = meta_->getTree()[path].empty();
+            if(!empty){
+                std::cerr << "Dir " + path + " is NOT empty, rm failed.\n";
+                state = false;
+            }else{
+                meta_->getTree().erase(path);
+                std::string parent = path.substr(0, path.find_last_of("/"));
+                parent = (parent == "" ? "/" : parent);
+                meta_->getTree()[parent].erase(std::find(meta_->getTree()[parent].begin(), meta_->getTree()[parent].end(), std::make_pair(name, 'd')));
+            }
+        }
+        return state;
+    }
 
     bool ls(std::string name = "") const {
         bool state = true;
@@ -261,7 +321,7 @@ public:
             }else{
                 // std::cout << "else ftype: " << ftype << endl;
                 std::cout << std::setw(16) << ftype << std::setw(16) << fname 
-                      << std::setw(16) << "-" << std::setw(16) << "-" << std::endl;
+                          << std::setw(16) << "-" << std::setw(16) << "-" << std::endl;
             }
             
         }
@@ -274,7 +334,7 @@ public:
         std::string wd(wd_);
         state = parsePath(wd, name);
         if(!state){
-            std::cerr << name + " does NOT exist, will ls .\n";
+            std::cerr << name + " does NOT exist, will cd /\n";
             wd = "/";
             name = "/";
         }
@@ -316,6 +376,11 @@ public:
         }
 
         bool ret = put_work(fpath, path);
+        if(ret){
+            meta_->getIdx2blks()[fileIdx_] = std::make_pair(blks_, len_);
+            meta_->getVp2fp()[vpath_] = fpath_;
+        }
+
         return ret;
     }
 
@@ -327,7 +392,6 @@ public:
         return name_;
     }
 
-    
     std::shared_ptr<FileSysInfo>& getMeta(){
         return meta_;
     }
@@ -378,8 +442,6 @@ private:
                     vblk_.back()->toFile();
                 }
                 cout << "put finished, " << blks_ << " blocks written.\n";
-                meta_->getIdx2blks()[fileIdx_] = std::make_pair(blks_, len_);
-                meta_->getFp2vp()[fpath_] = vpath_;
             }
         }else{
             std::cerr << "Error! Cannot get length of " + fpath + "\n";
