@@ -2,6 +2,7 @@
 #define FILESYS_HPP
 
 #include <iostream>
+#include <iomanip>
 #include <fstream>
 #include <string>
 #include <map>
@@ -9,6 +10,7 @@
 #include <memory>
 #include <exception>
 #include <cmath>
+#include <utility>
 #include "dataBlock.hpp"
 #include "json.hpp"
 
@@ -17,7 +19,7 @@ using json = nlohmann::json;
 class FileSysInfo{
 public:
     using func = std::function<void(void)>;
-    
+
     static std::shared_ptr<FileSysInfo> getFileSysInfo(){
         if(fileSysInfo_ == nullptr){
             fileSysInfo_ = std::shared_ptr<FileSysInfo>(new FileSysInfo());
@@ -34,40 +36,10 @@ public:
     }
 
     void saveMeta(){
-        std::ofstream jsonout(vp2idx, std::ios::out);
-        if(jsonout.is_open()){
-            json j(vpath2idx_);
-            jsonout << j;
-            nlohmann::from_json(j, vpath2idx_);
-        }else{
-            std::cerr << "vp2idx.json open failed.\n";
-        }
-        jsonout.close();
-        jsonout.open(fp2vp, std::ios::out);
-        if(jsonout.is_open()){
-            json j(fpath2vpath_);
-            jsonout << j;
-            nlohmann::from_json(j, fpath2vpath_);
-        }else{
-            std::cerr << "fp2vp.json open failed.\n";
-        }
-        jsonout.close();
-        jsonout.open(idx2blks, std::ios::out);
-        if(jsonout.is_open()){
-            json j(idx2blks_);
-            jsonout << j;
-            nlohmann::from_json(j, idx2blks_);
-        }else{
-            std::cerr << "idx2blks.json open failed.\n";
-        }
-        jsonout.close();
-        jsonout.open(jfs, std::ios::out);
-        if(jsonout.is_open()){
-            jsonout << jFileSys;
-        }else{
-            std::cerr << "fileSys.json open failed.\n";
-        }
-        jsonout.close();
+        saveJson(vp2idx, vpath2idx_);
+        saveJson(fp2vp, fpath2vpath_);
+        saveJson(idx2blks, idx2blks_);
+        saveJson(ftree, fileTree_);
     }
 
     std::map<std::string, size_t>& getVp2idx(){
@@ -78,77 +50,51 @@ public:
         return fpath2vpath_;
     }
 
-    std::map<size_t, size_t>& getIdx2blks(){
+    std::map<size_t, std::pair<size_t, size_t>>& getIdx2blks(){
         return idx2blks_;
     }
 
-    json& getJson(){
-        return jFileSys;
+    std::map<std::string, std::vector<std::pair<std::string, char>>>& getTree(){
+        return fileTree_;
     }
 
     ~FileSysInfo(){};
 
 protected:
-    FileSysInfo(std::string metaRoot = "/Users/yifengzhu/Code/Mini-DFS-cpp/miniDFS/metaData/", size_t fileCount = 0): 
-        metaRoot_(metaRoot), fileCount_(fileCount), vp2idx(metaRoot+"vp2idx.json"), fp2vp(metaRoot+"fp2vp.json"), idx2blks(metaRoot+"idx2blks.json"), jfs(metaRoot+"fileSys.json"){
+    FileSysInfo(std::string metaRoot = "/Users/yifengzhu/Code/Mini-DFS-cpp/miniDFS/metaData/"): 
+        metaRoot_(metaRoot), fileCount_(0), vp2idx(metaRoot+"vp2idx.json"), 
+        fp2vp(metaRoot+"fp2vp.json"), idx2blks(metaRoot+"idx2blks.json"), 
+        ftree(metaRoot+"fileSys.json"){
         std::string cdcmd("cd "+metaRoot_);
         std::string mkcmd("mkdir -p "+metaRoot_);
         int ret = system(cdcmd.c_str());
         bool state = true;
         if(ret != 0){
             ret = system(mkcmd.c_str());
-            jFileSys = {{"files", json::array()}, {"folders", json::array()}};
+            std::cerr << "Root dir does NOT exist, creating new dir...\n";
+            fileTree_["/"] = {};
         }else{
-            std::ifstream jsonin(vp2idx);
-            if(jsonin.is_open()){
-                json j;
-                jsonin >> j;
-                nlohmann::from_json(j, vpath2idx_);
-            }else{
-                std::cerr << "vp2idx.json open failed.\n";
-                state = false;
+            bool state = true;
+            state = state && loadJson(vp2idx, vpath2idx_);
+            state = state && loadJson(fp2vp, fpath2vpath_);
+            state = state && loadJson(idx2blks, idx2blks_);
+            state = state && loadJson(ftree, fileTree_);
+            if(fileTree_.find("/") == fileTree_.end()){
+                fileTree_["/"] = {};
             }
-            jsonin.close();
-            std::cout << "vp2idx.json opened.\n";
-            jsonin.open(fp2vp);
-            if(jsonin.is_open()){
-                json j;
-                jsonin >> j;
-                nlohmann::from_json(j, fpath2vpath_);
-            }else{
-                std::cerr << "fp2vp.json open failed.\n";
-                state = false;
-            }
-            jsonin.close();
-            std::cout << "fp2vp.json opened.\n";
-            jsonin.open(idx2blks);
-            if(jsonin.is_open()){
-                json j;
-                jsonin >> j;
-                nlohmann::from_json(j, idx2blks_);
-                if(idx2blks_.size() > 0){
-                    fileCount_ = idx2blks_.rbegin()->first+1;
-                }
-                cout << "Load fileCount: " << fileCount_ << endl;
-            }else{
-                std::cerr << "idx2blks.json open failed.\n";
-                state = false;
-            }
-            jsonin.close();
-            std::cout << "idx2blks.json opened.\n";
-            jsonin.open(jfs);
-            if(jsonin.is_open()){
-                jsonin >> jFileSys;
-            }else{
-                std::cerr << "fileSys.json open failed.\n";
-                state = false;
-            }
-            jsonin.close();
-            std::cout << "fileSys.json opened.\n";
+
             if(!state){
                 std::cerr << "MetaData init failed.\n";
                 return;
             }
+
+            if(idx2blks_.size() > 0){
+                fileCount_ = idx2blks_.rbegin()->first+1;
+                cout << "Load fileCount: " << fileCount_ << endl;
+            }else{
+                cout << "No file found." << endl;
+            }
+
         }
         if(ret != 0){
             std::cerr << "MetaData init failed.\n";
@@ -158,102 +104,243 @@ protected:
     };
 
     FileSysInfo(const FileSysInfo& ) = delete;
+private:
+    template<typename T>
+    bool loadJson(std::string name, T& dst){
+        bool state = true;
+        std::ifstream jsonin(name);
+        if(jsonin.is_open()){
+            json j;
+            jsonin >> j;
+            nlohmann::from_json(j, dst);
+        }else{
+            std::cerr << name + " open failed.\n";
+            state = false;
+        }
+        jsonin.close();
+        std::cout << name + " opened.\n";
+        return state;
+    }
+
+    template<typename T>
+    bool saveJson(std::string name, T& dst){
+        bool state = true;
+        std::ofstream jsonout(name, std::ios::out);
+        if(jsonout.is_open()){
+            json j(dst);
+            jsonout << j;
+            nlohmann::from_json(j, dst);
+        }else{
+            std::cerr << name + " open failed.\n";
+            state = false;
+        }
+        jsonout.close();
+        std::cout << name + " opened.\n";
+        return state;
+    }
 
 private:
     static std::shared_ptr<FileSysInfo> fileSysInfo_;
     std::map<std::string, size_t> vpath2idx_;
     std::map<std::string, std::string> fpath2vpath_;
-    std::map<size_t, size_t> idx2blks_;
+    std::map<size_t, std::pair<size_t, size_t>> idx2blks_;
+    std::map<std::string, std::vector<std::pair<std::string, char>>> fileTree_;
     size_t fileCount_;
     std::string metaRoot_;
     const std::string vp2idx;
     const std::string fp2vp;
     const std::string idx2blks;
-    const std::string jfs;
-    json jFileSys;
+    const std::string ftree;
+    // const std::string jfs;
+    // json jFileSys;
 };
 
 std::shared_ptr<FileSysInfo> FileSysInfo::fileSysInfo_ = nullptr;
 
-class FileSys: public std::enable_shared_from_this<FileSys>{
+class FileSys{
 public:
-    virtual void init(){};
-    virtual bool mkdir(std::string name) { std::cerr << "Error! File can NOT mkdir.\n"; return false; }
-    virtual bool touch(std::string name) { std::cerr << "Error! File can NOT touch.\n"; return false; }
+    static std::shared_ptr<FileSys> getFileSys(){
+        if(fileSys_ == nullptr){
+            fileSys_ = std::shared_ptr<FileSys>(new FileSys());
+        }
+        return fileSys_;
+    }
+
+    virtual bool mkdir(std::string name) {
+        std::string path = (wd_ == "/" ? wd_ + name : wd_ + "/" + name);
+        if(meta_->getTree().find(path) != meta_->getTree().end()){
+            std::cerr << "Directory " + name + " already exists in " + wd_ + ", mkdir failed.\n";
+            return false;
+        }
+        meta_->getTree()[path] = {};
+        meta_->getTree()[wd_].push_back({name, 'd'});
+        return true;
+    }
+
+    virtual bool touch(std::string name) {
+        std::string path = (wd_ == "/" ? wd_ + name : wd_ + "/" + name);
+        if(meta_->getVp2idx().find(path) != meta_->getVp2idx().end()){
+            std::cerr << "File " + name + " already exists in " + wd_ + ", mkdir failed.\n";
+            return false;
+        }
+        fileIdx_ = fileCount();
+        meta_->getVp2idx()[path] = fileIdx_;
+        meta_->getIdx2blks()[fileIdx_] = std::make_pair(0, 0);
+        meta_->getTree()[wd_].push_back({name, 'f'});
+        countInc();
+        return true;
+    }
+
     virtual bool rm(std::string name) { std::cerr << "Error! File can NOT rm.\n"; return false; }
     virtual bool rmdir(std::string name) { std::cerr << "Error! File can NOT rm.\n"; return false; }
-    virtual bool ls(std::string name = "") const { std::cerr << "Error! File can NOT ls.\n"; return false; }
-    virtual bool put(std::string fpath, std::string vpath) { std::cerr << "Error! File can NOT put.\n"; return false; }
-    virtual std::shared_ptr<FileSys> cd(std::string name) { std::cerr << "Error! File can NOT cd.\n"; return shared_from_this(); }
-    std::shared_ptr<FileSys> dir() { return parent_; }
-    std::string pwd() {
-        std::shared_ptr<FileSys> parent = dir();
-        std::string path = name_;
-        while(parent != nullptr && parent->getName() != "/"){
-            path = parent->getName() + "/" + path;
-            // std::cout << "pwd out: " << parent.use_count() << std::endl;
-            // std::cout << parent->getName() << std::endl;
-            parent = parent->dir();
+
+    virtual bool ls(std::string name = "") const {
+        bool state = true;
+        std::string path = wd_;
+        if(name == ""){
+            ;
+        }else if(name[0] == '/'){
+            if(name.size() > 1 && name[name.size()-1] == '/'){
+                name = name.substr(0, name.size()-1);
+            }
+            path = name;
+        }else{
+            if(name[name.size()-1] == '/'){
+                name = name.substr(0, name.size()-1);
+            }
+            path += name;
         }
-        path = path == "/" ? path : "/" + path + "/";
-        return path;
+
+        if(meta_->getTree().find(path) == meta_->getTree().end()){
+            std::cerr << path + " does NOT exist, will ls .\n";
+            path = wd_;
+            state = false;
+        }
+        std::cout << "ls ." << std::endl;
+
+        std::vector<std::pair<std::string&, const char>> files, dirs;
+        std::cout << std::setw(16) << "type" << std::setw(16) 
+                  << "name" << std::setw(16) << std::setw(16) 
+                  << "length" << std::setw(16) << "blocks" << endl;
+        std::cout << std::setw(16) << "d" << std::setw(16) << "." 
+                  << std::setw(16) << "-" << std::setw(16) << "-" << std::endl;
+        std::cout << std::setw(16) << "d" << std::setw(16) << ".." 
+                  << std::setw(16) << "-" << std::setw(16) << "-" << std::endl;
+        for(auto& c : meta_->getTree()[path]){
+            size_t id = meta_->getVp2idx()[path];
+            std::string fname = c.first;
+            const char ftype = c.second;
+            size_t len = meta_->getIdx2blks()[id].second;
+            size_t blks = meta_->getIdx2blks()[id].first;
+            std::cout << std::setw(16) << ftype << std::setw(16) << fname 
+                      << std::setw(16) << len << std::setw(16) << blks << std::endl;
+        }
+        return true;
     }
-    std::string getRoot(){ return root_; }
-    std::string getName() { return name_; }
-    size_t fileCount(){ return meta_->getCount(); }
-    std::shared_ptr<FileSysInfo> getMeta(){ return meta_; }
+
+    bool cd(std::string name) {
+        bool state = true;
+        if(name.size() == 0){
+            wd_ = "/";
+            name_ = "/";
+        }else if(name == "."){
+            ;
+        }else if(name == ".."){
+            if(name_ == "/"){
+                state = false;
+            }else{
+                std::string parentPath = wd_.substr(0, wd_.find_last_of("/"));
+                wd_ = parentPath == "" ? "/" : parentPath;
+                name_ = wd_.substr(wd_.find_last_of("/")+1);
+            }
+        }else if(name[0] == '/'){ // '/aaa/bbb/ccc', '/aaa/bbb/ccc'
+            if(name.size() > 1 && name[name.size()-1] == '/'){
+                // fomatting: remove '/' at the end.
+                name = name.substr(0, name.size()-1);
+            }
+            if(meta_->getTree().find(name) == meta_->getTree().end()){
+                std::cerr << name << " does NOT exist, cd to /\n";
+                wd_ = "/";
+                name_ = "/";
+                state = false;
+            }else{
+                wd_ = name;
+                name_ = wd_.substr(name.find_last_of("/")+1, std::string::npos);
+            }
+        }else{  // 'bbb/ccc/', 'bbb/ccc'
+            if(name[name.size()-1] == '/'){
+                // fomatting: remove '/' at the end.
+                name = name.substr(0, name.size()-1);
+            }
+            name = (wd_ == "/" ? wd_ + name : wd_ + "/" + name);
+            if(meta_->getTree().find(name) == meta_->getTree().end()){
+                std::cerr << name << " does NOT exist, cd to /\n";
+                wd_ = "/";
+                name_ = "/";
+                state = false;
+            }else{
+                wd_ = name;
+                name_ = wd_.substr(name.find_last_of("/")+1, std::string::npos);
+            }
+        }
+        return state;
+    }
+    
+    void pwd() {
+        std::cout << wd_ << std::endl;
+    }
+
+    bool put(std::string fpath, std::string name) {
+        // fpath: real path, name: virtual name in pwd
+        // to do, now is wrong
+        std::string path = wd_ + name;
+        if(meta_->getVp2idx().find(path) == meta_->getVp2idx().end()){
+            std::cerr << "File " + name + " does NOT exist, creat it.\n";
+            bool ret = touch(name);
+            if(!ret){
+                return false;
+            }
+        }
+        bool ret = put_work(fpath, path);
+        return ret;
+    }
+
+    std::string getRoot(){
+        return root_;
+    }
+
+    std::string getName() {
+        return name_;
+    }
+
+    
+    std::shared_ptr<FileSysInfo>& getMeta(){
+        return meta_;
+    }
+
 protected:
-    FileSys(std::string name, std::shared_ptr<FileSys> parent = nullptr, std::string rootPath = "/Users/yifengzhu/Code/Mini-DFS-cpp/miniDFS/data/")
-            : name_(name), parent_(parent), root_(rootPath) {
+    FileSys(std::string rootPath = "/Users/yifengzhu/Code/Mini-DFS-cpp/miniDFS/data/")
+            : name_("/"), wd_("/"), root_(rootPath), len_(0), blkLen_(2048), fpath_(""), vpath_(""), blks_(0) {
                 std::string cmd = "mkdir -p " + root_;
                 system(cmd.c_str());
+                meta_ = FileSysInfo::getFileSysInfo();
             }
-    FileSys(const FileSys& filesys){
-        name_ = filesys.name_;
-        parent_ = filesys.parent_;
-        root_ = filesys.root_;
-        // cur_ = filesys.cur_;
-        meta_ = filesys.meta_;
-        std::string cmd = "mkdir -p " + root_;
-        system(cmd.c_str());
-    }
-    FileSys& operator=(const FileSys& filesys){
-        name_ = filesys.name_;
-        parent_ = filesys.parent_;
-        root_ = filesys.root_;
-        // cur_ = filesys.cur_;
-        meta_ = filesys.meta_;
-        std::string cmd = "mkdir -p " + root_;
-        system(cmd.c_str());
-        return *this;
-    }
+    FileSys(const FileSys& filesys) = delete;
+
+    FileSys& operator=(const FileSys& filesys) = delete;
+
     void countInc(){
         meta_->countInc();
     }
+
 private:
-    std::string name_;
-    std::shared_ptr<FileSys> parent_;
-    // std::shared_ptr<FileSys> cur_;
-    std::string root_;
-    std::shared_ptr<FileSysInfo> meta_;
-};
-
-class File: public FileSys{
-public:
-    File(std::string name, std::shared_ptr<FileSys> parent, size_t len = 0, size_t blkLen = 2048, std::string fpath = "", std::string vpath = "", size_t blks = 0): 
-        FileSys(name, parent), len_(len), blkLen_(blkLen), fpath_(fpath), vpath_(vpath), blks_(blks) {
-
-        }
-
-    ~File(){}
-
-    bool put(std::string fpath, std::string vpath) override{
+    bool put_work(std::string fpath, std::string vpath) { 
         ifstream finput(fpath, std::ios::app);
         if(finput.is_open()){
             fpath_ = fpath;
             vpath_ = vpath;
             len_ = finput.tellg();
-            cout << "file length: " << len_ << endl;
+            std::cout << "file length: " << len_ << endl;
             blks_ = std::ceil(double(len_) / double(blkLen_));
             fileIdx_ = fileCount();
             finput.close();
@@ -279,13 +366,24 @@ public:
         cout << "put finished, " << blks_ << " blocks written.\n";
         getMeta()->getVp2idx()[fpath_] = fileIdx_;
         getMeta()->getFp2vp()[fpath_] = vpath_;
-        getMeta()->getIdx2blks()[fileIdx_] = blks_;
+        getMeta()->getIdx2blks()[fileIdx_] = std::make_pair(blks_, len_);
         countInc();
         cout << fileCount() << endl;
         return true;
     }
 
+    size_t fileCount(){ return meta_->getCount(); }
+
 private:
+    static std::shared_ptr<FileSys> fileSys_;
+    std::string name_; // current directory
+    std::string wd_; // working directory
+    std::shared_ptr<FileSys> parent_;
+    // std::shared_ptr<FileSys> cur_;
+    std::string root_; // real path for filesys
+    std::shared_ptr<FileSysInfo> meta_;
+
+    // for put
     size_t len_; // total file length
     size_t blkLen_; // block size
     size_t blks_; // number of blocks
@@ -295,132 +393,6 @@ private:
     std::vector<std::shared_ptr<DataBlock>> vblk_; // vector of pointers of DataBlock
 };
 
-class Folder: public FileSys{
-public:
-    Folder(std::string name, std::shared_ptr<FileSys> parent = nullptr, std::string rootPath = "/Users/yifengzhu/Code/Mini-DFS-cpp/miniDFS/data/"): FileSys(name, parent, rootPath){
-        // auto meta = getMeta();
-        // for(auto j : meta->getJson()["files"]){
-        //     files_[j] = nullptr;
-        // }
-        // for(auto j : meta->getJson()["folders"]){
-        //     folders_[j] = nullptr;
-        // }
-    }
-
-    Folder(const Folder& folder): FileSys(folder) {
-        files_ = folder.files_;
-        folders_ = folder.folders_;
-    }
-
-    Folder& operator=(const Folder& folder){
-        FileSys::operator=(folder);
-        files_ = folder.files_;
-        folders_ = folder.folders_;
-        return *this;
-    }
-
-    ~Folder(){};
-
-    void init() override{
-        folders_["."] = std::dynamic_pointer_cast<Folder>(shared_from_this());
-        folders_[".."] = std::dynamic_pointer_cast<Folder>(dir());
-    }
-
-    bool mkdir(std::string name) override {
-        if(folders_.find(name) == folders_.end()){
-            folders_[name] = std::make_shared<Folder>(name, std::dynamic_pointer_cast<FileSys>(shared_from_this()));
-            folders_[name]->init();
-            getMeta()->getJson()["folders"].push_back(folders_[name]->pwd());
-        }else{
-            std::cerr << "Directory " + name + " already exists, mkdir failed.\n";
-            return false;
-        }
-        return true;
-    }
-
-    bool touch(std::string name) override {
-        if(files_.find(name) == files_.end()){
-            files_[name] = std::make_shared<File>(name, std::dynamic_pointer_cast<FileSys>(shared_from_this()));
-            getMeta()->getJson()["files"].push_back(files_[name]->pwd());
-        }else{
-            std::cerr << "File " + name + " already exists, touch failed.\n";
-            return false;
-        }
-        return true;
-    }
-
-    bool rm(std::string name) override {
-        size_t ret = files_.erase(name);
-        if(ret == 0){
-            std::cerr << "File " + name + " does NOT exist, rm failed.\n";
-            return false;
-        }
-        std::cerr << "File " + name + " removed.\n";
-        return true;
-    }
-
-    bool rmdir(std::string name) override {
-        size_t ret = folders_.erase(name);
-        if(ret == 0){
-            std::cerr << "Directory " + name + " does NOT exist, rmdir failed.\n";
-            return false;
-        }
-        std::cerr << "Directory " + name + " removed.\n";
-        return true;
-    }
-
-    bool ls(std::string name = "") const override {
-        if(name == ""){
-            std::cout << "file:\n";
-            for(auto f : files_){
-                std::cout << f.first+" ";
-            }
-            std::cout << "\n\ndirectory:\n";
-            for(auto d : folders_){
-                std::cout << d.first+" ";
-            }
-            std::cout << std::endl;
-            return true;
-        }
-        return folders_.at(name)->ls();
-    }
-
-    std::shared_ptr<FileSys> cd(std::string name) override {
-        if(folders_.find(name) != folders_.end()){
-            try{
-                std::cout << "Enter directory " + name + "\n";
-                if(folders_[name] == nullptr && name == ".."){
-                    std::cerr << "Now at root. cd .. failed.\n";
-                }else{
-                    return std::dynamic_pointer_cast<FileSys>(folders_[name]);
-                }
-            }catch(std::bad_weak_ptr& e){
-                std::cerr << e.what() << std::endl;
-                return std::dynamic_pointer_cast<FileSys>(shared_from_this());
-            }
-        }//else if(getMeta()->getJson().find(pwd()+name+"/") != getMeta()->getJson().end()){
-            //
-        //}
-        std::cerr << "Directory " + name + " does NOT exist, cd failed.\n";
-        return std::dynamic_pointer_cast<FileSys>(shared_from_this());
-    }
-
-    bool put(std::string fpath, std::string name) override {
-        // fpath: real path, name: virtual name in pwd
-        if(files_.find(name) == files_.end()){
-            std::cerr << "File " + name + " does NOT exist, creat it.\n";
-            bool ret = touch(name);
-            if(!ret){
-                return false;
-            }
-        }
-        std::string vpath = pwd() + name;
-        bool ret = files_[name]->put(fpath, vpath);
-        return ret;
-    }
-private:
-    std::map<std::string, std::shared_ptr<File>> files_;
-    std::map<std::string, std::shared_ptr<Folder>> folders_;
-};
+std::shared_ptr<FileSys> FileSys::fileSys_ = nullptr;
 
 #endif // FILESYS_HPP

@@ -81,60 +81,58 @@ private:
 
     static void mkdir(){
         for(auto idx = commandParser_->parameters_.begin()+1; idx != commandParser_->parameters_.end(); ++idx){
-            commandParser_->cur_->mkdir(*idx);
+            commandParser_->filesys_->mkdir(*idx);
         }
     };
 
     static void touch(){
         for(auto idx = commandParser_->parameters_.begin()+1; idx != commandParser_->parameters_.end(); ++idx){
-            commandParser_->cur_->touch(*idx);
+            commandParser_->filesys_->touch(*idx);
         }
     };
 
     static void rm(){
         for(auto idx = commandParser_->parameters_.begin()+1; idx != commandParser_->parameters_.end(); ++idx){
-            commandParser_->cur_->rm(*idx);
+            commandParser_->filesys_->rm(*idx);
         }
     };
 
     static void rmdir(){
         for(auto idx = commandParser_->parameters_.begin()+1; idx != commandParser_->parameters_.end(); ++idx){
-            commandParser_->cur_->rmdir(*idx);
+            commandParser_->filesys_->rmdir(*idx);
         }
     };
 
     static void ls(){
         if(commandParser_->parameters_.size() == 1){
-            commandParser_->cur_->ls();
+            commandParser_->filesys_->ls();
             return;
         }
         for(auto idx = commandParser_->parameters_.begin()+1; idx != commandParser_->parameters_.end(); ++idx){
-            commandParser_->cur_->ls(*idx);
+            commandParser_->filesys_->ls(*idx);
         }
     };
     
     static void cd(){
-        commandParser_->cur_ = commandParser_->cur_->cd(commandParser_->parameters_.at(1));
+        commandParser_->filesys_->cd(commandParser_->parameters_.at(1));
     };
 
     static void pwd(){
-        cout << commandParser_->cur_->pwd() << endl;
+        commandParser_->filesys_->pwd();
     };
 
     static void put(){
-        commandParser_->cur_->put(commandParser_->parameters_.at(1), commandParser_->parameters_.at(2));
+        commandParser_->filesys_->put(commandParser_->parameters_.at(1), commandParser_->parameters_.at(2));
     };
 
     static void quit(){
-        commandParser_->cur_->getMeta()->saveMeta();
+        commandParser_->filesys_->getMeta()->saveMeta();
         commandParser_->stop();
     };
 
 protected:
     CommandParser(){
-        filesys_ = std::make_shared<Folder>("/");
-        filesys_->init();
-        cur_ = filesys_;
+        filesys_ = FileSys::getFileSys();
         run_ = true;
     };
 
@@ -146,7 +144,6 @@ private:
     vector<string> parameters_;
     map<string, func> cmdHandler_;
     std::shared_ptr<FileSys> filesys_;
-    std::shared_ptr<FileSys> cur_;
     bool run_;
 };
 
