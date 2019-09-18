@@ -70,6 +70,7 @@ protected:
         metaRoot_(metaRoot), fileCount_(0), vp2idx(metaRoot+"vp2idx.json"), 
         vp2fp(metaRoot+"vp2fp.json"), idx2blks(metaRoot+"idx2blks.json"), 
         ftree(metaRoot+"fileSys.json"){
+        std::cout << "Initing, please wait...\n";
         std::string cdcmd("cd "+metaRoot_);
         std::string mkcmd("mkdir -p "+metaRoot_);
         int ret = system(cdcmd.c_str());
@@ -95,11 +96,11 @@ protected:
 
             if(vpath2fpath_.size() > 0){
                 fileCount_ = vpath2fpath_.size();
-                cout << "Load fileCount: " << fileCount_ << endl;
+                std::cout << "Load fileCount: " << fileCount_ << endl;
             }else{
-                cout << "No file found." << endl;
+                std::cout << "No file found." << endl;
             }
-
+            std::cout << "Init finished.\n";
         }
         if(ret != 0){
             std::cerr << "MetaData init failed.\n";
