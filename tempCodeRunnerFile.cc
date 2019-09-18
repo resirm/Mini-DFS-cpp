@@ -1,0 +1,13 @@
+    // shared_ptr<FileSys> filesys = make_shared<Folder>("/");
+    // cout << "mkdir a, b" << endl;
+    // // filesys->mkdir("a");
+    // // filesys->mkdir("b");
+    // // cout << "touch fuck_cy, cy_dick" << endl;
+    // // filesys->touch("fuck_cy");
+    // // filesys->touch("cy_dick");
+    // // cout << "ls" << endl;
+    // // filesys->ls();
+    // // cout << "pwd" << endl;
+    // // cout << filesys->pwd() << endl;
+    // // cout << "cd a" << endl;
+    // // // filesys->cd("a");
