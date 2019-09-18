@@ -11,6 +11,7 @@
 #include <exception>
 #include <cmath>
 #include <utility>
+#include <algorithm>
 #include "dataBlock.hpp"
 #include "json.hpp"
 
@@ -18,8 +19,6 @@ using json = nlohmann::json;
 
 class FileSysInfo{
 public:
-    using func = std::function<void(void)>;
-
     static std::shared_ptr<FileSysInfo> getFileSysInfo(){
         if(fileSysInfo_ == nullptr){
             fileSysInfo_ = std::shared_ptr<FileSysInfo>(new FileSysInfo());
@@ -36,10 +35,16 @@ public:
     }
 
     void saveMeta(){
-        saveJson(vp2idx, vpath2idx_);
-        saveJson(fp2vp, fpath2vpath_);
-        saveJson(idx2blks, idx2blks_);
-        saveJson(ftree, fileTree_);
+        bool state = true;
+        state = state && saveJson(vp2idx, vpath2idx_);
+        state = state && saveJson(fp2vp, fpath2vpath_);
+        state = state && saveJson(idx2blks, idx2blks_);
+        state = state && saveJson(ftree, fileTree_);
+        if(state){
+            std::cout << "MetaData saved.\n";
+        }else{
+            std::cout <<"MetaData save failed.\n";
+        }
     }
 
     std::map<std::string, size_t>& getVp2idx(){
@@ -88,8 +93,8 @@ protected:
                 return;
             }
 
-            if(idx2blks_.size() > 0){
-                fileCount_ = idx2blks_.rbegin()->first+1;
+            if(fpath2vpath_.size() > 0){
+                fileCount_ = fpath2vpath_.size() + 1;
                 cout << "Load fileCount: " << fileCount_ << endl;
             }else{
                 cout << "No file found." << endl;
@@ -166,59 +171,71 @@ public:
         return fileSys_;
     }
 
-    virtual bool mkdir(std::string name) {
-        std::string path = (wd_ == "/" ? wd_ + name : wd_ + "/" + name);
-        if(meta_->getTree().find(path) != meta_->getTree().end()){
+    bool mkdir(std::string name) {
+        bool state = true;
+        std::string path(wd_);
+        state = parsePath(path, name);
+        if(state){
             std::cerr << "Directory " + name + " already exists in " + wd_ + ", mkdir failed.\n";
             return false;
         }
-        meta_->getTree()[path] = {};
-        meta_->getTree()[wd_].push_back({name, 'd'});
-        return true;
-    }
+        path = name;
 
-    virtual bool touch(std::string name) {
-        std::string path = (wd_ == "/" ? wd_ + name : wd_ + "/" + name);
-        if(meta_->getVp2idx().find(path) != meta_->getVp2idx().end()){
-            std::cerr << "File " + name + " already exists in " + wd_ + ", mkdir failed.\n";
-            return false;
+        std::vector<std::string> dirs = split(path, '/');
+        std::string p = "";
+        for(auto d : dirs){
+            if(d != ""){
+                std::string pre = (p == "" ? "/" : p);
+                std::string cur = d;
+                p = p + "/" + d;
+                if(meta_->getTree().find(p) == meta_->getTree().end()){
+                    meta_->getTree()[p] = {};
+                    meta_->getTree()[pre].push_back({d, 'd'});
+                }
+            }
         }
-        fileIdx_ = fileCount();
-        meta_->getVp2idx()[path] = fileIdx_;
-        meta_->getIdx2blks()[fileIdx_] = std::make_pair(0, 0);
-        meta_->getTree()[wd_].push_back({name, 'f'});
-        countInc();
+
         return true;
     }
 
-    virtual bool rm(std::string name) { std::cerr << "Error! File can NOT rm.\n"; return false; }
-    virtual bool rmdir(std::string name) { std::cerr << "Error! File can NOT rm.\n"; return false; }
-
-    virtual bool ls(std::string name = "") const {
+    bool touch(std::string name) {
         bool state = true;
-        std::string path = wd_;
-        if(name == ""){
-            ;
-        }else if(name[0] == '/'){
-            if(name.size() > 1 && name[name.size()-1] == '/'){
-                name = name.substr(0, name.size()-1);
-            }
-            path = name;
-        }else{
-            if(name[name.size()-1] == '/'){
-                name = name.substr(0, name.size()-1);
-            }
-            path += name;
-        }
-
-        if(meta_->getTree().find(path) == meta_->getTree().end()){
-            std::cerr << path + " does NOT exist, will ls .\n";
-            path = wd_;
+        std::string path(wd_);
+        state = parsePath(path, name, 'f');
+        
+        if(state){
+            std::cerr << "File " + name + " already exists in " + path + ", touch failed.\n";
             state = false;
-        }
-        std::cout << "ls ." << std::endl;
+        }else{
+            std::string parent = path;
+            path = (path == "/" ? path + name : path + "/" + name);
 
-        std::vector<std::pair<std::string&, const char>> files, dirs;
+            fileIdx_ = fileCount();
+            meta_->getVp2idx()[path] = fileIdx_;
+            meta_->getIdx2blks()[fileIdx_] = std::make_pair(0, 0);
+            meta_->getTree()[parent].push_back({name, 'f'});
+            countInc();
+        }
+
+        return true;
+    }
+
+    bool rm(std::string name) { std::cerr << "Error! File can NOT rm.\n"; return false; }
+    bool rmdir(std::string name) { std::cerr << "Error! File can NOT rm.\n"; return false; }
+
+    bool ls(std::string name = "") const {
+        bool state = true;
+        std::string path(wd_);
+        state = parsePath(path, name);
+        if(!state){
+            if(name != ""){
+                std::cerr << name + " does NOT exist, will ls .\n";
+            }
+            path = wd_;
+        }
+
+        std::cout << "ls " + path << std::endl;
+
         std::cout << std::setw(16) << "type" << std::setw(16) 
                   << "name" << std::setw(16) << std::setw(16) 
                   << "length" << std::setw(16) << "blocks" << endl;
@@ -227,62 +244,42 @@ public:
         std::cout << std::setw(16) << "d" << std::setw(16) << ".." 
                   << std::setw(16) << "-" << std::setw(16) << "-" << std::endl;
         for(auto& c : meta_->getTree()[path]){
-            size_t id = meta_->getVp2idx()[path];
+            std::string fullPath = (path == "/" ? path + c.first : path + "/" + c.first);
             std::string fname = c.first;
-            const char ftype = c.second;
-            size_t len = meta_->getIdx2blks()[id].second;
-            size_t blks = meta_->getIdx2blks()[id].first;
-            std::cout << std::setw(16) << ftype << std::setw(16) << fname 
-                      << std::setw(16) << len << std::setw(16) << blks << std::endl;
+            char ftype = c.second;
+            size_t len = 0;
+            size_t blks = 0;
+            size_t id = 0;
+            
+            if(ftype == 'f'){
+                // std::cout << "if ftype: " << ftype << endl;
+                id = meta_->getVp2idx().at(fullPath);
+                size_t len = meta_->getIdx2blks().at(id).second;
+                size_t blks = meta_->getIdx2blks().at(id).first;
+                std::cout << std::setw(16) << ftype << std::setw(16) << fname 
+                          << std::setw(16) << len << std::setw(16) << blks << std::endl;
+            }else{
+                // std::cout << "else ftype: " << ftype << endl;
+                std::cout << std::setw(16) << ftype << std::setw(16) << fname 
+                      << std::setw(16) << "-" << std::setw(16) << "-" << std::endl;
+            }
+            
         }
-        return true;
+
+        return state;
     }
 
     bool cd(std::string name) {
         bool state = true;
-        if(name.size() == 0){
-            wd_ = "/";
-            name_ = "/";
-        }else if(name == "."){
-            ;
-        }else if(name == ".."){
-            if(name_ == "/"){
-                state = false;
-            }else{
-                std::string parentPath = wd_.substr(0, wd_.find_last_of("/"));
-                wd_ = parentPath == "" ? "/" : parentPath;
-                name_ = wd_.substr(wd_.find_last_of("/")+1);
-            }
-        }else if(name[0] == '/'){ // '/aaa/bbb/ccc', '/aaa/bbb/ccc'
-            if(name.size() > 1 && name[name.size()-1] == '/'){
-                // fomatting: remove '/' at the end.
-                name = name.substr(0, name.size()-1);
-            }
-            if(meta_->getTree().find(name) == meta_->getTree().end()){
-                std::cerr << name << " does NOT exist, cd to /\n";
-                wd_ = "/";
-                name_ = "/";
-                state = false;
-            }else{
-                wd_ = name;
-                name_ = wd_.substr(name.find_last_of("/")+1, std::string::npos);
-            }
-        }else{  // 'bbb/ccc/', 'bbb/ccc'
-            if(name[name.size()-1] == '/'){
-                // fomatting: remove '/' at the end.
-                name = name.substr(0, name.size()-1);
-            }
-            name = (wd_ == "/" ? wd_ + name : wd_ + "/" + name);
-            if(meta_->getTree().find(name) == meta_->getTree().end()){
-                std::cerr << name << " does NOT exist, cd to /\n";
-                wd_ = "/";
-                name_ = "/";
-                state = false;
-            }else{
-                wd_ = name;
-                name_ = wd_.substr(name.find_last_of("/")+1, std::string::npos);
-            }
+        std::string wd(wd_);
+        state = parsePath(wd, name);
+        if(!state){
+            std::cerr << name + " does NOT exist, will ls .\n";
+            wd = "/";
+            name = "/";
         }
+        wd_ = wd;
+        name_ = name;
         return state;
     }
     
@@ -292,15 +289,32 @@ public:
 
     bool put(std::string fpath, std::string name) {
         // fpath: real path, name: virtual name in pwd
-        // to do, now is wrong
-        std::string path = wd_ + name;
-        if(meta_->getVp2idx().find(path) == meta_->getVp2idx().end()){
-            std::cerr << "File " + name + " does NOT exist, creat it.\n";
-            bool ret = touch(name);
+        if(name == "" || name == "." || name == ".."){
+            std::cerr << "You must put into a file!\n";
+            return false;
+        }
+        bool state = true;
+        std::string path(wd_);
+        state = parsePath(path, name, 'f');
+        if(!state){
+            bool ret = true;
+            if(meta_->getTree().find(path) == meta_->getTree().end()){
+                std::cerr << "Dir " + path + " does NOT exist, creat it.\n";
+                ret = mkdir(path);
+            }
             if(!ret){
+                std::cerr << "mkdir " + path + " failed, put failed.\n";
+                return false;
+            }
+            path = (path == "/" ? path + name : path + "/" + name);
+            std::cerr << "File " + path + " does NOT exist, creat it.\n";
+            ret = touch(path);
+            if(!ret){
+                std::cerr << "touch " + path + " failed, put failed.\n";
                 return false;
             }
         }
+
         bool ret = put_work(fpath, path);
         return ret;
     }
@@ -344,41 +358,132 @@ private:
             blks_ = std::ceil(double(len_) / double(blkLen_));
             fileIdx_ = fileCount();
             finput.close();
+
+            if((getMeta()->getVp2idx().find(vpath_) != getMeta()->getVp2idx().end()) && (getMeta()->getIdx2blks()[getMeta()->getVp2idx()[vpath_]].first > 0)){
+                cerr << "File " + vpath_ + " already exists, overwritting is not allowed.\n";
+                return false;
+            }else{
+                if((getMeta()->getVp2idx().find(vpath_) != getMeta()->getVp2idx().end()) && (getMeta()->getIdx2blks()[getMeta()->getVp2idx()[vpath_]].first == 0)){
+                    fileIdx_ = getMeta()->getVp2idx()[vpath_];
+                }
+                size_t idx = 0;
+                while(idx < blks_){
+                    ++idx;
+                    int blklen = blkLen_;
+                    if(idx == blks_){
+                        blklen = len_ % blkLen_;
+                    }
+                    vblk_.push_back(std::make_shared<DataBlock>(fpath_, vpath_, getRoot()+std::to_string(fileIdx_)+"-"+std::to_string(idx-1), blkLen_, blklen, idx*blkLen_, idx));
+                    vblk_.back()->fromFile();
+                    vblk_.back()->toFile();
+                }
+                cout << "put finished, " << blks_ << " blocks written.\n";
+                meta_->getIdx2blks()[fileIdx_] = std::make_pair(blks_, len_);
+                meta_->getFp2vp()[fpath_] = vpath_;
+            }
         }else{
             std::cerr << "Error! Cannot get length of " + fpath + "\n";
             return false;
         }
-        if(getMeta()->getVp2idx().find(vpath_) != getMeta()->getVp2idx().end()){
-            cerr << "File " + vpath_ + " already exists, overwritting is not allowed.\n";
-            return false;
-        }
-        size_t idx = 0;
-        while(idx < blks_){
-            ++idx;
-            int blklen = blkLen_;
-            if(idx == blks_){
-                blklen = len_ % blkLen_;
-            }
-            vblk_.push_back(std::make_shared<DataBlock>(fpath_, vpath_, getRoot()+std::to_string(fileIdx_)+"-"+std::to_string(idx-1), blkLen_, blklen, idx*blkLen_, idx));
-            vblk_.back()->fromFile();
-            vblk_.back()->toFile();
-        }
-        cout << "put finished, " << blks_ << " blocks written.\n";
-        getMeta()->getVp2idx()[fpath_] = fileIdx_;
-        getMeta()->getFp2vp()[fpath_] = vpath_;
-        getMeta()->getIdx2blks()[fileIdx_] = std::make_pair(blks_, len_);
-        countInc();
-        cout << fileCount() << endl;
+        
         return true;
     }
 
-    size_t fileCount(){ return meta_->getCount(); }
+    bool parsePath(std::string&wd, std::string& name, char type = 'd') const{
+        bool state = true;
+        if(name.size() == 0){
+            state = false;
+        }else if(name == "."){
+            ;
+        }else if(name == ".."){
+            if(name_ == "/"){
+                state = false;
+            }else{
+                std::string parentPath = wd.substr(0, wd.find_last_of("/"));
+                wd = (parentPath == "" ? "/" : parentPath);
+                name = wd.substr(wd.find_last_of("/")+1);
+            }
+        }else if(name[0] == '/'){ // '/aaa/bbb/ccc', '/aaa/bbb/ccc'
+            if(name.size() > 1 && name[name.size()-1] == '/'){
+                // fomatting: remove '/' at the end.
+                name = name.substr(0, name.size()-1);
+            }
+            if(type == 'd'){
+                if(meta_->getTree().find(name) == meta_->getTree().end()){
+                    state = false;
+                }else{
+                    wd = name;
+                    name = wd.substr(name.find_last_of("/")+1, std::string::npos);
+                    name = name == "" ? "/" : name;
+                }
+            }else{ // type == 'f'
+                std::string path(name);
+                name = path.substr(path.find_last_of("/")+1, std::string::npos);
+                wd = path.substr(0, path.find_last_of("/"));
+                wd = wd == "" ? "/" : wd;
+                if(meta_->getTree().find(wd) == meta_->getTree().end()){
+                    state = false;
+                }else if(std::find(meta_->getTree()[wd].begin(), meta_->getTree()[wd].end(), std::make_pair(name, 'f')) == meta_->getTree()[wd].end()){
+                    state = false;
+                }
+            }
+        }else{  // 'bbb/ccc/', 'bbb/ccc'
+            if(name[name.size()-1] == '/'){
+                // fomatting: remove '/' at the end.
+                name = name.substr(0, name.size()-1);
+            }
+            name = (wd == "/" ? wd + name : wd + "/" + name);
+            if(type == 'd'){
+                if(meta_->getTree().find(name) == meta_->getTree().end()){
+                    state = false;
+                }else{
+                    wd = name;
+                    name = wd.substr(name.find_last_of("/")+1, std::string::npos);
+                    name = name == "" ? "/" : name;
+                }
+            }else{ // type == 'f'
+                std::string path(name);
+                name = path.substr(path.find_last_of("/")+1, std::string::npos);
+                wd = path.substr(0, path.find_last_of("/"));
+                wd = wd == "" ? "/" : wd;
+                if(meta_->getTree().find(wd) == meta_->getTree().end()){
+                    state = false;
+                }else if(std::find(meta_->getTree()[wd].begin(), meta_->getTree()[wd].end(), std::make_pair(name, 'f')) == meta_->getTree()[wd].end()){
+                    state = false;
+                }
+            }
+        }
+        return state;
+    }
+
+    std::vector<std::string> split(string str, char sep=' '){
+        // cout << str << endl;
+        std::vector<std::string> rst;
+        string s = "";
+        for(auto c : str){
+            if(c == sep){
+                rst.push_back(s);
+                // cout << s << endl;
+                s = "";
+            }else{
+                s += c;
+            }
+            // cout << c << endl;
+        }
+        rst.push_back(s);
+        // cout << s << endl;
+        // cout << rst.size() << endl;
+        return rst;
+    };
+
+    size_t fileCount(){
+        return meta_->getCount();
+    }
 
 private:
     static std::shared_ptr<FileSys> fileSys_;
     std::string name_; // current directory
     std::string wd_; // working directory
-    std::shared_ptr<FileSys> parent_;
     // std::shared_ptr<FileSys> cur_;
     std::string root_; // real path for filesys
     std::shared_ptr<FileSysInfo> meta_;

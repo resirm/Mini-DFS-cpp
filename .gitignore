@@ -9,5 +9,6 @@ build
 # OS X
 .DS_Store
 *.app
+tempCodeRunnerFile.cc
 
 /miniDFS

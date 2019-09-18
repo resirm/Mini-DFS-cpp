@@ -36,15 +36,16 @@ public:
     void work(){
         string cmd;
         while(run_){
+            cerr << ">>  ";
             if(std::getline(cin, cmd)){
                 auto rst = split(cmd);
                 if(rst.size() <= 1 && rst[0] != "ls" && rst[0] != "pwd" && rst[0] != "quit"){
-                    cerr << "Usage: \n";
+                    cerr << "Usage: \n>>  ";
                     continue;
                 }
                 parameters_ = rst;
                 if(cmdHandler_.find(rst[0]) == cmdHandler_.end()){
-                    cerr << "Usage: \n";
+                    cerr << "Usage: \n>>  ";
                     continue;
                 }
                 cmdHandler_[rst[0]]();
@@ -140,7 +141,6 @@ protected:
 
 private:
     static std::shared_ptr<CommandParser> commandParser_;
-    std::string dir_;
     vector<string> parameters_;
     map<string, func> cmdHandler_;
     std::shared_ptr<FileSys> filesys_;
