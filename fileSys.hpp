@@ -17,6 +17,7 @@ using json = nlohmann::json;
 class FileSysInfo{
 public:
     using func = std::function<void(void)>;
+    
     static std::shared_ptr<FileSysInfo> getFileSysInfo(){
         if(fileSysInfo_ == nullptr){
             fileSysInfo_ = std::shared_ptr<FileSysInfo>(new FileSysInfo());
