@@ -69,4 +69,4 @@ private:
     char* buffer_;
 };
 
-#endif // DATA_BLOCK_HPP
+#endif // !DATA_BLOCK_HPP

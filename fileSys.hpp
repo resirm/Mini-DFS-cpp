@@ -112,7 +112,7 @@ protected:
     FileSysInfo(const FileSysInfo& ) = delete;
 
     FileSysInfo& operator= (const FileSysInfo&) = delete;
-    
+
 private:
     template<typename T>
     bool loadJson(std::string name, T& dst){
@@ -168,12 +168,12 @@ std::shared_ptr<FileSysInfo> FileSysInfo::fileSysInfo_ = nullptr;
 
 class FileSys{
 public:
-    static std::shared_ptr<FileSys> getFileSys(std::string rootPath = "/Users/yifengzhu/Code/Mini-DFS-cpp/miniDFS"){
-        if(fileSys_ == nullptr){
-            fileSys_ = std::shared_ptr<FileSys>(new FileSys(rootPath));
-        }
-        return fileSys_;
-    }
+    // static std::shared_ptr<FileSys> getFileSys(std::string rootPath = "/Users/yifengzhu/Code/Mini-DFS-cpp/miniDFS"){
+    //     if(fileSys_ == nullptr){
+    //         fileSys_ = std::shared_ptr<FileSys>(new FileSys(rootPath));
+    //     }
+    //     return fileSys_;
+    // }
 
     bool mkdir(std::string name) {
         bool state = true;
@@ -347,11 +347,11 @@ public:
         return state;
     }
     
-    void pwd() {
+    void pwd() const{
         std::cout << wd_ << std::endl;
     }
 
-    bool put(std::string fpath, std::string name) {
+    bool put(std::string fpath, std::string name, size_t fid) {
         // fpath: real path, name: virtual name in pwd
         if(name == "" || name == "." || name == ".."){
             std::cerr << "You must put into a file!\n";
@@ -379,7 +379,7 @@ public:
             }
         }
 
-        bool ret = put_work(fpath, path);
+        bool ret = put_work(fpath, path, fid);
         if(ret){
             meta_->getIdx2blks()[fileIdx_] = std::make_pair(blks_, len_);
             meta_->getVp2fp()[vpath_] = fpath_;
@@ -401,18 +401,18 @@ public:
     }
 
 protected:
-    FileSys(std::string rootPath = "/Users/yifengzhu/Code/Mini-DFS-cpp/miniDFS/")
+    FileSys(std::string nodename, std::string rootPath = "/Users/yifengzhu/Code/Mini-DFS-cpp/miniDFS/")
             : name_("/"), wd_("/"), root_(rootPath), len_(0), blkLen_(2048), fpath_(""), vpath_(""), blks_(0) {
-                if(rootPath.empty()){
-                    std::cerr << "You MUST specify a ROOTPATH for MiniDFS!\n";
+                if(rootPath.empty() || nodename.empty()){
+                    std::cerr << "You MUST specify a name for a Node and a ROOTPATH for MiniDFS!\n";
                 }else{
                     std::string metaPath = root_;
                     if(root_.back() == '/'){
-                        root_ += "data/";
-                        metaPath += "metaData/";
+                        root_ = root_ + nodename + "/";
+                        metaPath = root_ + "metaData/";
                     }else{
-                        root_ += "/data/";
-                        metaPath += "/metaData/";
+                        root_ = root_ + "/" + nodename + "/";
+                        metaPath = root_ + "/metaData/";
                     }
                     std::string cmd = "mkdir -p " + root_;
                     system(cmd.c_str());
@@ -430,7 +430,7 @@ protected:
     }
 
 private:
-    bool put_work(std::string fpath, std::string vpath) { 
+    bool put_work(std::string fpath, std::string vpath, size_t fid) { 
         ifstream finput(fpath, std::ios::app);
         if(finput.is_open()){
             fpath_ = fpath;
@@ -438,7 +438,7 @@ private:
             len_ = finput.tellg();
             std::cout << "file length: " << len_ << endl;
             blks_ = std::ceil(double(len_) / double(blkLen_));
-            fileIdx_ = fileCount();
+            fileIdx_ = fid;
             finput.close();
 
             if((getMeta()->getVp2idx().find(vpath_) != getMeta()->getVp2idx().end()) && (getMeta()->getIdx2blks()[getMeta()->getVp2idx()[vpath_]].first > 0)){
@@ -556,12 +556,13 @@ private:
         return rst;
     };
 
+public:
     size_t fileCount(){
         return meta_->getCount();
     }
 
 private:
-    static std::shared_ptr<FileSys> fileSys_;
+    // static std::shared_ptr<FileSys> fileSys_;
     std::string name_; // current directory
     std::string wd_; // working directory
     // std::shared_ptr<FileSys> cur_;
@@ -578,6 +579,6 @@ private:
     std::vector<std::shared_ptr<DataBlock>> vblk_; // vector of pointers of DataBlock
 };
 
-std::shared_ptr<FileSys> FileSys::fileSys_ = nullptr;
+// std::shared_ptr<FileSys> FileSys::fileSys_ = nullptr;
 
-#endif // FILESYS_HPP
+#endif // !FILESYS_HPP
