@@ -19,9 +19,9 @@ using json = nlohmann::json;
 
 class FileSysInfo{
 public:
-    static std::shared_ptr<FileSysInfo> getFileSysInfo(){
+    static std::shared_ptr<FileSysInfo> getFileSysInfo(std::string metaPath = "/Users/yifengzhu/Code/Mini-DFS-cpp/miniDFS/metaData/"){
         if(fileSysInfo_ == nullptr){
-            fileSysInfo_ = std::shared_ptr<FileSysInfo>(new FileSysInfo());
+            fileSysInfo_ = std::shared_ptr<FileSysInfo>(new FileSysInfo(metaPath));
         }
         return fileSysInfo_;
     }
@@ -110,6 +110,9 @@ protected:
     };
 
     FileSysInfo(const FileSysInfo& ) = delete;
+
+    FileSysInfo& operator= (const FileSysInfo&) = delete;
+    
 private:
     template<typename T>
     bool loadJson(std::string name, T& dst){
@@ -165,9 +168,9 @@ std::shared_ptr<FileSysInfo> FileSysInfo::fileSysInfo_ = nullptr;
 
 class FileSys{
 public:
-    static std::shared_ptr<FileSys> getFileSys(){
+    static std::shared_ptr<FileSys> getFileSys(std::string rootPath = "/Users/yifengzhu/Code/Mini-DFS-cpp/miniDFS"){
         if(fileSys_ == nullptr){
-            fileSys_ = std::shared_ptr<FileSys>(new FileSys());
+            fileSys_ = std::shared_ptr<FileSys>(new FileSys(rootPath));
         }
         return fileSys_;
     }
@@ -398,11 +401,25 @@ public:
     }
 
 protected:
-    FileSys(std::string rootPath = "/Users/yifengzhu/Code/Mini-DFS-cpp/miniDFS/data/")
+    FileSys(std::string rootPath = "/Users/yifengzhu/Code/Mini-DFS-cpp/miniDFS/")
             : name_("/"), wd_("/"), root_(rootPath), len_(0), blkLen_(2048), fpath_(""), vpath_(""), blks_(0) {
-                std::string cmd = "mkdir -p " + root_;
-                system(cmd.c_str());
-                meta_ = FileSysInfo::getFileSysInfo();
+                if(rootPath.empty()){
+                    std::cerr << "You MUST specify a ROOTPATH for MiniDFS!\n";
+                }else{
+                    std::string metaPath = root_;
+                    if(root_.back() == '/'){
+                        root_ += "data/";
+                        metaPath += "metaData/";
+                    }else{
+                        root_ += "/data/";
+                        metaPath += "/metaData/";
+                    }
+                    std::string cmd = "mkdir -p " + root_;
+                    system(cmd.c_str());
+                    meta_ = FileSysInfo::getFileSysInfo(metaPath);
+                    std::cout << "FileSys inited.\n";
+                }
+                
             }
     FileSys(const FileSys& filesys) = delete;
 

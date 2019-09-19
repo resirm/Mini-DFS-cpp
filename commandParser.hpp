@@ -135,9 +135,12 @@ protected:
     CommandParser(){
         filesys_ = FileSys::getFileSys();
         run_ = true;
+        std::cout << "CommandParser inited.\n";
     };
 
     CommandParser(const CommandParser& ) = delete;
+
+    CommandParser& operator= (const CommandParser&) = delete;
 
 private:
     static std::shared_ptr<CommandParser> commandParser_;
